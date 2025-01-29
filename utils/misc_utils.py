@@ -12,14 +12,15 @@ from numpy import histogramdd
 from argparse import Namespace
 import sys
 
-sys.path.append("/home/master/rs/uq/toolkit/uq_toolkit")
-from quantile_models import (
-    crps_score,
-    bag_nll,
-    check_loss,
-    interval_score,
-    get_obs_props,
-)
+# sys.path.append("/home/master/rs/uq/toolkit/uq_toolkit")
+# from quantile_models import (
+#     crps_score,
+#     bag_nll,
+#     check_loss,
+#     interval_score,
+#     get_obs_props,
+# )
+import uncertainty_toolbox as uct
 
 
 def set_seeds(seed):
@@ -123,23 +124,31 @@ def test_uq(
     args = Namespace(
         device=torch.device("cpu"), q_list=torch.linspace(0.01, 0.99, 99)
     )
-    curr_crps = crps_score(model, x, y, args)
-    curr_nll = bag_nll(model, x, y, args)
-    curr_check = check_loss(model, x, y, args)
-    curr_int = interval_score(model, x, y, args)
-    int_exp_props, int_obs_props, int_cdf_preds = get_obs_props(
-        model, x, y, exp_props=None, device=args.device, type="interval"
-    )
-    curr_int_cali = torch.mean(torch.abs(int_exp_props - int_obs_props)).item()
+    # curr_crps = crps_score(model, x, y, args)
+    # curr_nll = bag_nll(model, x, y, args)
+    # curr_check = check_loss(model, x, y, args)
+    # curr_int = interval_score(model, x, y, args)
+    # int_exp_props, int_obs_props, int_cdf_preds = get_obs_props(#0.95 PI
+    #     model, x, y, exp_props=None, device=args.device, type="interval"
+    # )
+    # curr_int_cali = torch.mean(torch.abs(int_exp_props - int_obs_props)).item()
 
+    # curr_scoring_rules = {
+    #     "crps": float(curr_crps),
+    #     "nll": float(curr_nll),
+    #     "check": float(curr_check),
+    #     "int": float(curr_int),
+    #     "int_cali": float(curr_int_cali),
+    # }
     curr_scoring_rules = {
-        "crps": float(curr_crps),
-        "nll": float(curr_nll),
-        "check": float(curr_check),
-        "int": float(curr_int),
-        "int_cali": float(curr_int_cali),
+        "crps": 0,
+        "nll": 0,
+        "check": 0,
+        "int": 0,
+        "int_cali": 0,
     }
 
+    #pnn_metrics = uct.metrics.get_all_metrics(pred_mean, pred_std, te_y)
     return (
         cali_score,
         sharp_score,

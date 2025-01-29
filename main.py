@@ -86,7 +86,7 @@ def parse_args():
     parser.add_argument("--gpu", type=int, default=0, help="gpu num to use")
 
     parser.add_argument(
-        "--num_ep", type=int, default=1000, help="number of epochs"
+        "--num_ep", type=int, default=10000, help="number of epochs"
     )
     parser.add_argument("--nl", type=int, default=2, help="number of layers")
     parser.add_argument("--hs", type=int, default=64, help="hidden size")
@@ -334,6 +334,7 @@ if __name__ == "__main__":
                     xi = x_tr[g_idx.flatten()].to(args.device)
                     yi = y_tr[g_idx.flatten()].to(args.device)
                     q_list = torch.rand(args.num_q)
+                    #print(xi.shape)
                     loss = model_ens.loss(
                         loss_fn,
                         xi,
