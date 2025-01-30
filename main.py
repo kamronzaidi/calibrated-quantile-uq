@@ -107,7 +107,7 @@ def parse_args():
     # only for cali losses
     parser.add_argument(
         "--penalty",
-        dest="sharp_penalty",
+        dest="sharp_penalty",#[0-1 in 20 equispaced]
         type=float,
         help="coefficient for sharpness penalty; 0 for none",
     )
@@ -126,12 +126,12 @@ def parse_args():
     # draw a sorted group batch every
     parser.add_argument(
         "--gdp",
-        dest="draw_group_every",
+        dest="draw_group_every",  #[1, 2, 3, 5, 10, 30, 100]
         type=int,
         help="draw a group batch every # epochs",
     )
     parser.add_argument(
-        "--recal", type=int, default=1, help="1 to recalibrate after training"
+        "--recal", type=int, default=0, help="1 to recalibrate after training"
     )
     parser.add_argument(
         "--save_dir",
@@ -180,7 +180,7 @@ if __name__ == "__main__":
 
     args = parse_args()
 
-    print("DEVICE: {}".format(args.device))
+    #print("DEVICE: {}".format(args.device))
 
     if args.debug:
         import pudb
@@ -208,34 +208,37 @@ if __name__ == "__main__":
 
     # Save file name
     if "penalty" not in args.loss:
-        save_file_name = "{}/{}_loss{}_ens{}_boot{}_seed{}.pkl".format(
+        save_file_name = "{}/{}_loss{}_ens{}_boot{}_gdp{}_seed{}.pkl".format(
             args.save_dir,
             args.data,
             args.loss,
             args.num_ens,
             args.boot,
+            args.draw_group_every,
             args.seed,
         )
     else:
         # penalizing sharpness
         if args.sharp_all is not None and args.sharp_all:
-            save_file_name = "{}/{}_loss{}_pen{}_sharpall_ens{}_boot{}_seed{}.pkl".format(
+            save_file_name = "{}/{}_loss{}_pen{}_sharpall_ens{}_boot{}_gdp{}_seed{}.pkl".format(
                 args.save_dir,
                 args.data,
                 args.loss,
                 args.sharp_penalty,
                 args.num_ens,
                 args.boot,
+                args.draw_group_every,
                 args.seed,
             )
         elif args.sharp_all is not None and not args.sharp_all:
-            save_file_name = "{}/{}_loss{}_pen{}_wideonly_ens{}_boot{}_seed{}.pkl".format(
+            save_file_name = "{}/{}_loss{}_pen{}_wideonly_ens{}_boot{}_gdp{}_seed{}.pkl".format(
                 args.save_dir,
                 args.data,
                 args.loss,
                 args.sharp_penalty,
                 args.num_ens,
                 args.boot,
+                args.draw_group_every,
                 args.seed,
             )
     if os.path.exists(save_file_name):
@@ -265,7 +268,7 @@ if __name__ == "__main__":
         data_out.y_al,
     )
     y_range = (y_al.max() - y_al.min()).item()
-    print("y range: {:.3f}".format(y_range))
+    # print("y range: {:.3f}".format(y_range))
 
     # Making models
     num_tr = x_tr.shape[0]
@@ -319,7 +322,7 @@ if __name__ == "__main__":
 
     for ep in tqdm.tqdm(range(args.num_ep)):
         if model_ens.done_training:
-            print("Done training ens at EP {}".format(ep))
+            # print("Done training ens at EP {}".format(ep))
             break
 
         # Take train step
@@ -410,11 +413,11 @@ if __name__ == "__main__":
         te_loss_list.append(ep_te_loss)
 
         # Printing some losses
-        if (ep % 200 == 0) or (ep == args.num_ep - 1):
-            print("EP:{}".format(ep))
-            print("Train loss {}".format(ep_tr_loss))
-            print("Val loss {}".format(ep_va_loss))
-            print("Test loss {}".format(ep_te_loss))
+        # if (ep % 200 == 0) or (ep == args.num_ep - 1):
+        #     print("EP:{}".format(ep))
+        #     print("Train loss {}".format(ep_tr_loss))
+        #     print("Val loss {}".format(ep_va_loss))
+        #     print("Test loss {}".format(ep_te_loss))
 
     # Finished training
     # Move everything to cpu
@@ -429,7 +432,7 @@ if __name__ == "__main__":
     model_ens.use_device(torch.device("cpu"))
 
     # Test UQ on val
-    print("Testing UQ on val")
+    # print("Testing UQ on val")
     va_exp_props = torch.linspace(-2.0, 3.0, 501)
     va_cali_score, va_sharp_score, va_obs_props, va_q_preds, _, _ = test_uq(
         model_ens,
@@ -534,20 +537,20 @@ if __name__ == "__main__":
         "te_q_preds": te_q_preds,
         "te_g_cali_scores": te_g_cali_scores,
         "te_scoring_rules": te_scoring_rules,
-        "recal_model": recal_model,   # recalibration model
-        "recal_exp_props": recal_exp_props,
-        "recal_va_cali_score": recal_va_cali_score,
-        "recal_va_sharp_score": recal_va_sharp_score,
-        "recal_va_obs_props": recal_va_obs_props,
-        "recal_va_q_preds": recal_va_q_preds,
-        "recal_va_g_cali_scores": recal_va_g_cali_scores,
-        "recal_va_scoring_rules": recal_va_scoring_rules,
-        "recal_te_cali_score": recal_te_cali_score,
-        "recal_te_sharp_score": recal_te_sharp_score,
-        "recal_te_obs_props": recal_te_obs_props,
-        "recal_te_q_preds": recal_te_q_preds,
-        "recal_te_g_cali_scores": recal_te_g_cali_scores,
-        "recal_te_scoring_rules": recal_te_scoring_rules,
+        "recal_model": recal_model if args.recal else None,   # recalibration model
+        "recal_exp_props": recal_exp_props if args.recal else None,
+        "recal_va_cali_score": recal_va_cali_score if args.recal else None,
+        "recal_va_sharp_score": recal_va_sharp_score if args.recal else None,
+        "recal_va_obs_props": recal_va_obs_props if args.recal else None,
+        "recal_va_q_preds": recal_va_q_preds if args.recal else None,
+        "recal_va_g_cali_scores": recal_va_g_cali_scores if args.recal else None,
+        "recal_va_scoring_rules": recal_va_scoring_rules if args.recal else None,
+        "recal_te_cali_score": recal_te_cali_score if args.recal else None,
+        "recal_te_sharp_score": recal_te_sharp_score if args.recal else None,
+        "recal_te_obs_props": recal_te_obs_props if args.recal else None,
+        "recal_te_q_preds": recal_te_q_preds if args.recal else None,
+        "recal_te_g_cali_scores": recal_te_g_cali_scores if args.recal else None,
+        "recal_te_scoring_rules": recal_te_scoring_rules if args.recal else None,
         "args": args,
         "model": model_ens,
     }
