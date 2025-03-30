@@ -16,7 +16,7 @@ from models.kuleshov_2018_cal import *
 from auxiliary.load_data import load_data, load_data_bpl, load_data_csv
 import copy
 
-def gen_model(dataset, seed, path, output_device, extra_val=None):
+def gen_model(dataset, seed, path, output_device, extra_val=None, base_model = bpl_nn):
     #seed = 0
     # if torch.cuda.is_available():
     #     output_device = 'cuda'
@@ -61,7 +61,7 @@ def gen_model(dataset, seed, path, output_device, extra_val=None):
     data = data_set(X=X, Y=Y)
     dataloader = DataLoader(data, batch_size=64, shuffle=True)#25
 
-    our_model = bpl_nn(X.shape[1]).to(output_device)
+    our_model = base_model(X.shape[1]).to(output_device)
     optimizer = optim.Adam(our_model.parameters(), lr=1e-3)
     loss_fun = torch.nn.MSELoss()
 

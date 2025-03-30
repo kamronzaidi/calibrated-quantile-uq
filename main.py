@@ -16,7 +16,7 @@ from utils.misc_utils import (
     discretize_domain,
     gather_loss_per_q,
 )
-from recal import iso_recal
+from recal import iso_recal, iso_recal_ours
 from utils.q_model_ens import QModelEns
 from losses import (
     cali_loss,
@@ -26,7 +26,7 @@ from losses import (
     interval_loss,
     batch_interval_loss,
 )
-
+from utils.NNKit.models.model import vanilla_nn, bpl_nn, standard_nn_model
 
 def get_loss_fn(loss_name):
     if loss_name == "qr":
@@ -140,7 +140,10 @@ def parse_args():
         help="dir to save results",
     )
     parser.add_argument("--debug", type=int, default=0, help="1 to debug")
-
+    
+    parser.add_argument("--skip_dups", type=int, default=1, help="1 to skip over existing files")
+    
+    parser.add_argument("--big_model", type=int, default=1, help="1 to skip over existing files")
     args = parser.parse_args()
 
     if "penalty" in args.loss:
@@ -241,7 +244,7 @@ if __name__ == "__main__":
                 args.draw_group_every,
                 args.seed,
             )
-    if os.path.exists(save_file_name):
+    if os.path.exists(save_file_name) and args.skip_dups:
         print("skipping {}".format(save_file_name))
         sys.exit()
 
@@ -283,6 +286,7 @@ if __name__ == "__main__":
         wd=args.wd,
         num_ens=args.num_ens,
         device=args.device,
+        base_model=standard_nn_model if args.big_model else vanilla_nn
     )
 
     # Data loader
@@ -520,6 +524,41 @@ if __name__ == "__main__":
             recal_type="sklearn",
             test_group_cal=True,
         )
+        
+        # recal_model = iso_recal_ours(model_ens, x_va, y_va)
+        # recal_va_cali_score2,recal_va_sharp_score2,_,_,_,_ = test_uq(
+        #     model_ens,
+        #     x_va,
+        #     y_va,
+        #     recal_exp_props,
+        #     y_range,
+        #     recal_model=recal_model,
+        #     recal_type="sklearn",
+        #     test_group_cal=True,
+        # )
+        # recal_te_cali_score2,recal_te_sharp_score2,_,_,_,_ = test_uq(
+        #     model_ens,
+        #     x_te,
+        #     y_te,
+        #     recal_exp_props,
+        #     y_range,
+        #     recal_model=recal_model,
+        #     recal_type="sklearn",
+        #     test_group_cal=True,
+        # )
+
+    print(
+        "Recal Val Cali: {:.3f}, Sharp: {:.3f}".format(recal_va_cali_score, recal_va_sharp_score)
+    )
+    print(
+        "Recal Test Cali: {:.3f}, Sharp: {:.3f}".format(recal_te_cali_score, recal_te_sharp_score)
+    )
+    # print(
+    #     "Our Recal Val Cali: {:.3f}, Sharp: {:.3f}".format(recal_va_cali_score2, recal_va_sharp_score2)
+    # )
+    # print(
+    #     "Our Recal Test Cali: {:.3f}, Sharp: {:.3f}".format(recal_te_cali_score2, recal_te_sharp_score2)
+    # )
 
     save_dic = {
         "tr_loss_list": tr_loss_list,  # loss lists

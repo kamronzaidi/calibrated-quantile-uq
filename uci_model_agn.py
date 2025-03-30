@@ -20,7 +20,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error as MSE
 #sys.path.append('libs')
 #from libs.NNKit.models.model import vanilla_nn
-from utils.NNKit.models.model import vanilla_nn
+from utils.NNKit.models.model import vanilla_nn, bpl_nn, standard_nn_model
+from recal import iso_recal, iso_recal_ours
 from normal_regression import gen_model
 
 from utils.q_model_ens import QModelEns
@@ -428,6 +429,8 @@ if __name__=='__main__':
     parser.add_argument('--num_in_bin', type=int, default=40)
     parser.add_argument('--gpu', type=str, default=0)
     parser.add_argument('--debug', type=int, default=0)
+    parser.add_argument('--recal', type=int, default=0)
+    parser.add_argument('--big_model', type=int, default=0)
     args = parser.parse_args()
     if bool(args.debug):
         import pudb; pudb.set_trace()
@@ -444,7 +447,7 @@ if __name__=='__main__':
             device = torch.device('cpu')
 
     if args.dataset == '':
-        datasets = ['boston','yacht','energy','concrete','kin8nm','wine','power','naval','protein']
+        datasets = ['yacht','boston','energy','concrete','wine','power','kin8nm','naval','protein']
     else:
         datasets = [args.dataset]
     
@@ -464,6 +467,8 @@ if __name__=='__main__':
         per_seed_int = []
         per_seed_int_cali = []
         per_seed_model = []
+        per_seed_recal_cali = []
+        per_seed_recal_sharp = []
         
         for s in tqdm.tqdm(SEEDS):
             print(f"Seed: {s}")
@@ -491,7 +496,9 @@ if __name__=='__main__':
             x_tr = x_tr.to(device)
             y_tr = y_tr.to(device)
             x_va = x_va.to(device)
+            x_va2 = x_va.to(device)
             y_va = y_va.to(device)
+            y_va2 = y_va.to(device)
             x_te = x_te.to(device)
             y_te = y_te.to(device)
 
@@ -500,9 +507,17 @@ if __name__=='__main__':
             num_te = y_te.shape[0]
 
             """ load mean model """
-            f_path = f'mean_models/{dataset}_{seed}_mean.pkl'
+            #Changed for ICML Rebuttal
+            if args.big_model:
+                f_path = f'big_mean_models/{dataset}_{seed}_mean.pkl'
+            else:
+                f_path = f'mean_models/{dataset}_{seed}_mean.pkl'
+                
             if not os.path.exists(f_path):
-                gen_model(dataset, seed, f_path, device)
+                if args.big_model:
+                    gen_model(dataset, seed, f_path, device, base_model = standard_nn_model)
+                else:
+                    gen_model(dataset, seed, f_path, device) #Technically wrong, needs to use consistent model, but very little diff
             with open(f_path, 'rb') as pf:
                 mean_model = pkl.load(pf)
                 mean_model.to(device)
@@ -633,6 +648,7 @@ if __name__=='__main__':
                 x_tr.cpu(), y_tr.cpu(), x_va.cpu(), y_va.cpu(), x_te.cpu(), y_te.cpu()
             cdf_model.use_device(torch.device('cpu'))
 
+            y_va_centered = y_va2.cpu() - torch.from_numpy(pred_va)
             y_te_centered = y_te - torch.from_numpy(pred_te)
             """ test calibration """
             #print('Testing UQ on test')
@@ -662,12 +678,35 @@ if __name__=='__main__':
             #print(te_g_cali_scores[5:])
             #print(te_scoring_rules)
             #print('-'*80)
+                        
+            if args.recal:
+                va_exp_props = torch.linspace(-2.0, 3.0, 501)
+                va_cali_score, va_sharp_score, va_obs_props, va_q_preds, _, _ = test_uq(cdf_model, x_va2.cpu(), y_va_centered, va_exp_props, y_range,
+                        recal_model=None, recal_type=None)
+                recal_model = iso_recal(va_exp_props, va_obs_props)
+                #recal_model = iso_recal_ours(cdf_model, x_va2.cpu(), y_va_centered)
+                recal_exp_props = torch.linspace(0.01, 0.99, 99)
+                (
+                    recal_te_cali_score,
+                    recal_te_sharp_score,
+                    recal_te_obs_props,
+                    recal_te_q_preds,
+                    recal_te_g_cali_scores,
+                    recal_te_scoring_rules
+                ) = test_uq(cdf_model, x_te, y_te_centered, te_exp_props, y_range,
+                                recal_model=recal_model, recal_type="sklearn", test_group_cal=True,)
+                print('Recal Test Cali: {:.3f}, Sharp: {:.3f}'.format(
+                recal_te_cali_score, recal_te_sharp_score))
+                per_seed_recal_cali.append(recal_te_cali_score)
+                per_seed_recal_sharp.append(recal_te_sharp_score)
             
 
 
 
         print('Cali: {}'.format(np.mean(per_seed_cali)))
         print('Sharp: {}'.format(np.mean(per_seed_sharp)))
+        print('Recal Cali: {}'.format(np.mean(per_seed_recal_cali)))
+        print('Recal Sharp: {}'.format(np.mean(per_seed_recal_sharp)))
         #print('NLL: {}'.format(np.mean(per_seed_nll)))
         #print('CRPS: {}'.format(np.mean(per_seed_crps)))
         #print('Check: {}'.format(np.mean(per_seed_check)))
@@ -688,8 +727,10 @@ if __name__=='__main__':
             'per_seed_int': per_seed_int,
             'per_seed_int_cali': per_seed_int_cali,
             'per_seed_model': per_seed_model,
+            'per_seed_recal_cali': per_seed_recal_cali,
+            'per_seed_recal_sharp': per_seed_recal_sharp
         }
-        label = 'mauq'
+        label = f'mauq_recal_{args.recal}_bigmodel_{args.big_model}'
         save_name = '{}_{}_bin{}.pkl'.format(
             dataset, label, dist_thresh)
 

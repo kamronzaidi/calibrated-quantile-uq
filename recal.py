@@ -1,7 +1,46 @@
 import torch
 from sklearn.isotonic import IsotonicRegression
 from utils.misc_utils import get_q_idx
+from auxiliary.interp1d import *
+import numpy as np
 
+def get_cdf1_cdf2(model, X, Y1, Y2 = None, num_samples = 10000):
+    # COMPUTE CDF FOR SAME VALUE OF X AND TWO DIFFERENT VALUES OF Y. REQUIRED TO COMPUTE
+    # FINITE DIFFERENCE USED TO COMPUTE LIKELIHOOD. SIMULTANEOUS COMPUTATION FOR DIFFERENT YS
+    # NECESSARY DUE TO SAMPLING-BASED COMPUTATION
+
+    length_data = X.shape[0]
+    q_levels = torch.linspace(0, 1, num_samples).to(model.device)
+    
+    quantiles = model.predict_q(
+        X,
+        q_levels,
+    )#model(X, quantile=q_levels)
+
+    F1 = interp1d(quantiles, q_levels, Y1).clamp(min=0, max=1)
+    if Y2 is None:
+        return F1
+    else:
+        F2 = interp1d(quantiles, q_levels, Y2).clamp(min=0, max=1)
+        return F1, F2
+
+def iso_recal_ours(model, X, Y):
+    cdf_vals = get_cdf1_cdf2(model, X, Y)
+    Phat_vals = []
+    for cdf in cdf_vals:
+        cdf_l = cdf_vals <= cdf
+        cdf_ind = torch.zeros(cdf_vals.shape)
+        cdf_ind[cdf_l] = 1
+        Phat_vals.append(torch.mean(cdf_ind))
+
+    Phat_vals = torch.stack(Phat_vals).reshape(cdf_vals.shape[0], 1)
+
+    ## CONVERT Phat_Vals and cdf_vals TO NUMPY FOR ISOTONIC REGRESSION
+    cdf_vals_np = np.float64(cdf_vals.detach().cpu().numpy())
+    Phat_vals_np = np.float64(Phat_vals.cpu().numpy().reshape(Phat_vals.shape[0], ))
+
+    iso_reg = IsotonicRegression(out_of_bounds='clip').fit(cdf_vals_np, Phat_vals_np)
+    return iso_reg
 
 def iso_recal(exp_props, obs_props):
     exp_props = exp_props.flatten()

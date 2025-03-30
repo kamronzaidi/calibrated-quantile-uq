@@ -1,3 +1,4 @@
 *.npy
 utils/NNKit/*
 *__pycache__*
+*.pkl

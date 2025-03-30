@@ -254,6 +254,58 @@ class Conv1DLayer(nn.Module):
 
 
 """ Implementation of network architectures """
+class standard_nn_model(nn.Module):#From sharp cali model repo
+    def __init__(self, nfeatures, hid_dim = 100, n_hid_layers = 7):
+        super(standard_nn_model, self).__init__()
+        # input layer
+        self.input_layer = nn.Sequential(
+            nn.Linear(nfeatures, hid_dim),
+            nn.PReLU())
+        # hidden layers
+        self.hidden_layers = nn.ModuleList()
+        for i in range(n_hid_layers):
+            self.hidden_layers.append(nn.Sequential(
+            nn.Linear(hid_dim, hid_dim),
+            nn.PReLU()))
+        # output layer
+        self.output_layer = nn.Sequential(
+            nn.Linear(hid_dim, 1),
+            nn.PReLU())
+
+    def forward(self, input):
+        output = self.input_layer(input)
+        for layer in self.hidden_layers:
+            output_hidden = layer(output) + output
+            output = output_hidden
+        output = self.output_layer(output)
+
+        return output
+
+class bpl_nn(nn.Module):
+    def __init__(self, nfeatures):
+        super(bpl_nn, self).__init__()
+        # input layer
+        self.input_layer = nn.Sequential(
+            nn.Linear(nfeatures, 64),
+            nn.ReLU())
+        # hidden layers
+        self.hidden_layers = nn.ModuleList()
+        for i in range(1):
+            self.hidden_layers.append(nn.Sequential(
+            nn.Linear(64, 64),
+            nn.ReLU()))
+        # output layer
+        self.output_layer = nn.Sequential(
+            nn.Linear(64, 1))
+
+    def forward(self, input):
+        output = self.input_layer(input)
+        for layer in self.hidden_layers:
+            output_hidden = layer(output) + output
+            output = output_hidden
+        output = self.output_layer(output)
+
+        return output
 
 class vanilla_nn(nn.Module):
     def __init__(self, input_size=1, output_size=1, bias=True,

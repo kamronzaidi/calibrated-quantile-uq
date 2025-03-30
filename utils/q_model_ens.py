@@ -11,7 +11,7 @@ from scipy.stats import t as t_distr
 from scipy.interpolate import interp1d
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-from NNKit.models.model import vanilla_nn
+from NNKit.models.model import vanilla_nn, bpl_nn, standard_nn_model
 
 """
 Define wrapper uq_model class
@@ -124,19 +124,24 @@ class QModelEns(uq_model):
         wd,
         num_ens,
         device,
+        base_model = vanilla_nn
     ):
 
         self.num_ens = num_ens
         self.device = device
-        self.model = [
-            vanilla_nn(
-                input_size=input_size,
-                output_size=output_size,
-                hidden_size=hidden_size,
-                num_layers=num_layers,
-            ).to(device)
-            for _ in range(num_ens)
-        ]
+        self.model = []
+        for _ in range(num_ens):
+            #Changed for ICML Rebuttal!
+            if base_model in [standard_nn_model, bpl_nn]:
+                self.model.append(base_model(nfeatures=input_size).to(device))
+            else:            
+                self.model.append(base_model( #Changed for ICML Rebuttal!
+                    input_size=input_size,
+                    output_size=output_size,
+                    hidden_size=hidden_size,
+                    num_layers=num_layers,
+                ).to(device))
+            
         self.optimizers = [
             torch.optim.Adam(x.parameters(), lr=lr, weight_decay=wd)
             for x in self.model
