@@ -143,7 +143,7 @@ def parse_args():
     
     parser.add_argument("--skip_dups", type=int, default=1, help="1 to skip over existing files")
     
-    parser.add_argument("--big_model", type=int, default=1, help="1 to skip over existing files")
+    parser.add_argument("--big_model", type=int, default=0, help="1 to use bigger model")
     args = parser.parse_args()
 
     if "penalty" in args.loss:
@@ -286,7 +286,7 @@ if __name__ == "__main__":
         wd=args.wd,
         num_ens=args.num_ens,
         device=args.device,
-        base_model=standard_nn_model if args.big_model else vanilla_nn
+        big_model=args.big_model
     )
 
     # Data loader

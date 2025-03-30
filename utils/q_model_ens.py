@@ -124,7 +124,7 @@ class QModelEns(uq_model):
         wd,
         num_ens,
         device,
-        base_model = vanilla_nn
+        big_model = False
     ):
 
         self.num_ens = num_ens
@@ -132,10 +132,10 @@ class QModelEns(uq_model):
         self.model = []
         for _ in range(num_ens):
             #Changed for ICML Rebuttal!
-            if base_model in [standard_nn_model, bpl_nn]:
-                self.model.append(base_model(nfeatures=input_size).to(device))
+            if big_model:
+                self.model.append(standard_nn_model(nfeatures=input_size).to(device))
             else:            
-                self.model.append(base_model( #Changed for ICML Rebuttal!
+                self.model.append(vanilla_nn( #Changed for ICML Rebuttal!
                     input_size=input_size,
                     output_size=output_size,
                     hidden_size=hidden_size,
