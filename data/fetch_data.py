@@ -13,10 +13,10 @@ def get_uci_data(args):
     y_al = data[:, -1].reshape(-1, 1)
 
     x_tr, x_te, y_tr, y_te = train_test_split(
-        x_al, y_al, test_size=0.1, random_state=args.seed
+        x_al, y_al, test_size=0.2, random_state=args.seed
     )
     x_tr, x_va, y_tr, y_va = train_test_split(
-        x_tr, y_tr, test_size=0.2, random_state=args.seed
+        x_tr, y_tr, test_size=0.4, random_state=args.seed
     )
 
     s_tr_x = StandardScaler().fit(x_tr)

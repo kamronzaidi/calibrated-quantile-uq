@@ -1,7 +1,7 @@
 #!/bin/bash
 
 datasets=('yacht' 'boston' 'energy' 'concrete' 'wine' 'power' 'kin8nm' 'naval')
-losses=("batch_int" "batch_qr" "scaled_batch_cal")
+losses=("scaled_batch_cal" "batch_int" "batch_qr")
 seeds=(0 1 2 3 4)
 for data in "${datasets[@]}"; do
     for loss in "${losses[@]}"; do
