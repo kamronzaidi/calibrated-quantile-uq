@@ -4,6 +4,7 @@ from argparse import Namespace
 from copy import deepcopy
 import numpy as np
 import pickle as pkl
+from typing import Union
 import tqdm
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -28,6 +29,7 @@ from losses import (
     batch_interval_loss,
 )
 from utils.NNKit.models.model import vanilla_nn, bpl_nn, standard_nn_model
+from auxiliary.save_results import save_results
 
 def get_loss_fn(loss_name):
     if loss_name == "qr":
@@ -52,7 +54,8 @@ def get_loss_fn(loss_name):
         fn = interval_loss
     elif loss_name == "batch_int":
         fn = batch_interval_loss
-
+    elif "calipso" in loss_name:
+        fn = None
     else:
         raise ValueError("loss arg not valid")
 
@@ -84,10 +87,10 @@ def parse_args():
         default=30,
         help="number of quantiles you want to sample each step",
     )
-    parser.add_argument("--gpu", type=int, default=0, help="gpu num to use")
+    parser.add_argument("--gpu", type=str, default='0', help="gpu num to use")
 
     parser.add_argument(
-        "--num_ep", type=int, default=100, help="number of epochs"
+        "--num_ep", type=int, default=600, help="number of epochs"
     )
     parser.add_argument("--nl", type=int, default=2, help="number of layers")
     parser.add_argument("--hs", type=int, default=64, help="hidden size")
@@ -102,7 +105,7 @@ def parse_args():
         help="how long to wait for lower validation loss",
     )
 
-    parser.add_argument("--loss", type=str, default='scaled_batch_cal',
+    parser.add_argument("--loss", type=str, default='calipso',
                         help="specify type of loss")
 
     # only for cali losses
@@ -137,7 +140,7 @@ def parse_args():
     parser.add_argument(
         "--save_dir",
         type=str,
-        default="./",
+        default="./results/",
         help="dir to save results",
     )
     parser.add_argument("--debug", type=int, default=0, help="1 to debug")
@@ -145,7 +148,6 @@ def parse_args():
     parser.add_argument("--skip_dups", type=int, default=1, help="1 to skip over existing files")
     
     parser.add_argument("--big_model", type=int, default=0, help="1 to use bigger model")
-    parser.add_argument("--calipso", type=int, default=1, help="1 to use calipso")
     args = parser.parse_args()
 
     if "penalty" in args.loss:
@@ -172,7 +174,10 @@ def parse_args():
         if not args.num_ens > 1:
             raise RuntimeError("num_ens must be above > 1 for bootstrap")
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+    if args.gpu is str:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
     args.device = device
@@ -246,9 +251,9 @@ if __name__ == "__main__":
                 args.draw_group_every,
                 args.seed,
             )
-    if os.path.exists(save_file_name) and args.skip_dups:
-        print("skipping {}".format(save_file_name))
-        sys.exit()
+    # if os.path.exists(save_file_name) and args.skip_dups:
+    #     print("skipping {}".format(save_file_name))
+    #     sys.exit()
 
     # Set seeds
     set_seeds(args.seed)
@@ -279,7 +284,7 @@ if __name__ == "__main__":
     num_tr = x_tr.shape[0]
     dim_x = x_tr.shape[1]
     dim_y = y_tr.shape[1]
-    if args.calipso:
+    if "calipso" in args.loss:
         model_ens = CalipsoModel(
             input_size=dim_x,
             output_size=dim_y,
@@ -291,7 +296,8 @@ if __name__ == "__main__":
             device=args.device,
             big_model=args.big_model,
             cali_X=x_tr,
-            cali_y=y_tr
+            cali_y=y_tr,
+            pretrain="pretrain" in args.loss
         )
     else:
         model_ens = QModelEns(
@@ -447,7 +453,7 @@ if __name__ == "__main__":
         model_ens.use_device(torch.device("cpu"))
 
         # THE NEXT FEW LINES ARE TOO LONG AND TOO COMPLICATED. TODO: Use a better way (that doesn't require putting the model on cpu)!
-        if args.calipso:
+        if "calipso" in args.loss:
             #Calibrate remaining quantiles
             # tr_q_list = torch.linspace(0.01, 0.99, 99)
             tr_exp_props = torch.linspace(-0.01, 1.01, 103)
@@ -480,7 +486,7 @@ if __name__ == "__main__":
         for i, ece in enumerate(desired_eces):
             if va_cali_score<ece and va_sharp_score < best_sharp_scores[i]:
                 best_sharp_scores[i] = va_sharp_score
-                if args.calipso:
+                if "calipso" in args.loss:
                     model_ens.alphas = [alpha.detach() for alpha in model_ens.alphas]
                 best_models[i] = deepcopy(model_ens)
     
@@ -503,192 +509,4 @@ if __name__ == "__main__":
         #     print("Test loss {}".format(ep_te_loss))
 
     # Finished training
-    # Move everything to cpu
-    x_tr, y_tr, x_va, y_va, x_te, y_te = (
-        x_tr.cpu(),
-        y_tr.cpu(),
-        x_va.cpu(),
-        y_va.cpu(),
-        x_te.cpu(),
-        y_te.cpu(),
-    )
-    model_ens.use_device(torch.device("cpu"))
-
-    if args.calipso:
-        #Calibrate remaining quantiles
-        # tr_q_list = torch.linspace(0.01, 0.99, 99)
-        tr_exp_props = torch.linspace(-0.01, 1.01, 103)
-        tr_cali_score, tr_sharp_score, tr_obs_props, tr_q_preds, _, _ = test_uq(
-            model_ens,
-            x_tr,
-            y_tr,
-            tr_exp_props,
-            y_range,
-            recal_model=None,
-            recal_type=None,
-        )
-        recal_model_calipso = iso_recal(tr_exp_props, tr_obs_props)
-    else:
-        recal_model_calipso = None
-
-    # Test UQ on val
-    # print("Testing UQ on val")
-    va_exp_props = torch.linspace(-2.0, 3.0, 501)
-    va_cali_score, va_sharp_score, va_obs_props, va_q_preds, _, _ = test_uq(
-        model_ens,
-        x_va,
-        y_va,
-        va_exp_props,
-        y_range,
-        recal_model=recal_model_calipso,
-        recal_type="sklearn",
-    )
-    reduced_va_q_preds = va_q_preds[
-        :, get_q_idx(va_exp_props, 0.01) : get_q_idx(va_exp_props, 0.99) + 1
-    ]
-
-    # Test UQ on test
-    print("Testing UQ on test")
-    te_exp_props = torch.linspace(0.01, 0.99, 99)
-    (
-        te_cali_score,
-        te_sharp_score,
-        te_obs_props,
-        te_q_preds,
-        te_g_cali_scores,
-        te_scoring_rules,
-    ) = test_uq(
-        model_ens,
-        x_te,
-        y_te,
-        te_exp_props,
-        y_range,
-        recal_model=recal_model_calipso,
-        recal_type="sklearn",
-        test_group_cal=True,
-    )
-
-    # print('val', va_cali_score, va_sharp_score)
-    print("\n")
-    print("-" * 80)
-    print(args.data)
-    print("Draw frequency:", args.draw_group_every)
-    print(
-        "Test Cali: {:.3f}, Sharp: {:.3f}".format(te_cali_score, te_sharp_score)
-    )
-    print(te_g_cali_scores[:5])
-    print(te_g_cali_scores[5:])
-    print(te_scoring_rules)
-    print("-" * 80)
-
-    if args.recal:
-        recal_model = iso_recal(va_exp_props, va_obs_props)
-        recal_exp_props = torch.linspace(0.01, 0.99, 99)
-
-        (
-            recal_va_cali_score,
-            recal_va_sharp_score,
-            recal_va_obs_props,
-            recal_va_q_preds,
-            recal_va_g_cali_scores,
-            recal_va_scoring_rules
-        ) = test_uq(
-            model_ens,
-            x_va,
-            y_va,
-            recal_exp_props,
-            y_range,
-            recal_model=recal_model,
-            recal_type="sklearn",
-            test_group_cal=True,
-        )
-
-        (
-            recal_te_cali_score,
-            recal_te_sharp_score,
-            recal_te_obs_props,
-            recal_te_q_preds,
-            recal_te_g_cali_scores,
-            recal_te_scoring_rules
-        ) = test_uq(
-            model_ens,
-            x_te,
-            y_te,
-            recal_exp_props,
-            y_range,
-            recal_model=recal_model,
-            recal_type="sklearn",
-            test_group_cal=True,
-        )
-            
-            # recal_model = iso_recal_ours(model_ens, x_va, y_va)
-            # recal_va_cali_score2,recal_va_sharp_score2,_,_,_,_ = test_uq(
-            #     model_ens,
-            #     x_va,
-            #     y_va,
-            #     recal_exp_props,
-            #     y_range,
-            #     recal_model=recal_model,
-            #     recal_type="sklearn",
-            #     test_group_cal=True,
-            # )
-            # recal_te_cali_score2,recal_te_sharp_score2,_,_,_,_ = test_uq(
-            #     model_ens,
-            #     x_te,
-            #     y_te,
-            #     recal_exp_props,
-            #     y_range,
-            #     recal_model=recal_model,
-            #     recal_type="sklearn",
-            #     test_group_cal=True,
-            # )
-
-    print(
-        "Recal Val Cali: {:.3f}, Sharp: {:.3f}".format(recal_va_cali_score, recal_va_sharp_score)
-    )
-    print(
-        "Recal Test Cali: {:.3f}, Sharp: {:.3f}".format(recal_te_cali_score, recal_te_sharp_score)
-    )
-    # print(
-    #     "Our Recal Val Cali: {:.3f}, Sharp: {:.3f}".format(recal_va_cali_score2, recal_va_sharp_score2)
-    # )
-    # print(
-    #     "Our Recal Test Cali: {:.3f}, Sharp: {:.3f}".format(recal_te_cali_score2, recal_te_sharp_score2)
-    # )
-
-    save_dic = {
-        "tr_loss_list": tr_loss_list,  # loss lists
-        "va_loss_list": va_loss_list,
-        "te_loss_list": te_loss_list,
-        "va_cali_score": va_cali_score,  # test on va
-        "va_sharp_score": va_sharp_score,
-        "va_exp_props": va_exp_props,
-        "va_obs_props": va_obs_props,
-        "va_q_preds": va_q_preds,
-        "te_cali_score": te_cali_score,  # test on te
-        "te_sharp_score": te_sharp_score,
-        "te_exp_props": te_exp_props,
-        "te_obs_props": te_obs_props,
-        "te_q_preds": te_q_preds,
-        "te_g_cali_scores": te_g_cali_scores,
-        "te_scoring_rules": te_scoring_rules,
-        "recal_model": recal_model if args.recal else None,   # recalibration model
-        "recal_exp_props": recal_exp_props if args.recal else None,
-        "recal_va_cali_score": recal_va_cali_score if args.recal else None,
-        "recal_va_sharp_score": recal_va_sharp_score if args.recal else None,
-        "recal_va_obs_props": recal_va_obs_props if args.recal else None,
-        "recal_va_q_preds": recal_va_q_preds if args.recal else None,
-        "recal_va_g_cali_scores": recal_va_g_cali_scores if args.recal else None,
-        "recal_va_scoring_rules": recal_va_scoring_rules if args.recal else None,
-        "recal_te_cali_score": recal_te_cali_score if args.recal else None,
-        "recal_te_sharp_score": recal_te_sharp_score if args.recal else None,
-        "recal_te_obs_props": recal_te_obs_props if args.recal else None,
-        "recal_te_q_preds": recal_te_q_preds if args.recal else None,
-        "recal_te_g_cali_scores": recal_te_g_cali_scores if args.recal else None,
-        "recal_te_scoring_rules": recal_te_scoring_rules if args.recal else None,
-        "args": args,
-        "model": model_ens,
-    }
-
-    with open(save_file_name, "wb") as pf:
-        pkl.dump(save_dic, pf)
+    save_results(x_tr, y_tr, x_va, y_va, x_te, y_te, best_models, desired_eces, model_ens, args, y_range, tr_loss_list, va_loss_list, te_loss_list, best_sharp_scores, save_file_name)

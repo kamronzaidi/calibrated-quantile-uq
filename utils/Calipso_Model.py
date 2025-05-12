@@ -119,6 +119,7 @@ class CalipsoModel(uq_model):
         num_quantiles = 6,
         cali_X = None,
         cali_y = None,
+        pretrain = False,
     ):
         assert num_quantiles % 2 == 0, "num_quantiles must be even"
         self.num_ens = num_ens
@@ -128,14 +129,27 @@ class CalipsoModel(uq_model):
         for _ in range(num_quantiles):
             #Changed for ICML Rebuttal!
             if big_model:
-                self.quantile_models.append(standard_nn_model(nfeatures=input_size).to(device))
+                quantile_model = standard_nn_model(nfeatures=input_size).to(device)
             else:            
-                self.quantile_models.append(vanilla_nn( #Changed for ICML Rebuttal!
+                quantile_model = vanilla_nn( #Changed for ICML Rebuttal!
                     input_size=input_size,
                     output_size=output_size,
                     hidden_size=hidden_size,
                     num_layers=num_layers,
-                ).to(device))
+                ).to(device)
+            if pretrain:
+                train_X = cali_X.to(device)
+                train_y = cali_y.to(device)
+                optimizer = torch.optim.Adam(quantile_model.parameters(), lr=0.01)
+                loss_fn = torch.nn.MSELoss().to(device)
+                for _ in range(100):
+                    optimizer.zero_grad()
+                    output = quantile_model(train_X)
+                    loss = loss_fn(output, train_y)
+                    loss.backward()
+                    optimizer.step()
+            self.quantile_models.append(quantile_model)
+                
             
         self.optimizers = [
             torch.optim.Adam(x.parameters(), lr=lr, weight_decay=wd)
@@ -385,6 +399,8 @@ class CalipsoModel(uq_model):
         assert pred_mat.shape == (num_x, num_q)
         return pred_mat
 
+
+
         # ###
         # cdf_preds = []
         # for p in q_list:
@@ -419,11 +435,7 @@ class CalipsoModel(uq_model):
         # return ens_pred
         # ###
 
-def calipso_loss(quantileXZ_model, y, x, q_list, device, args):
-    loss = 0
-    for q in q_list:
-        loss += torch.mean(torch.abs(quantile_model(x) - y))
-    return loss
+
     
 if __name__ == "__main__":
     temp_model = QModelEns(
